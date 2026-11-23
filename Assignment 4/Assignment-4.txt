@@ -1,0 +1,415 @@
+
+import csv
+from pathlib import Path
+from decimal import Decimal
+from datetime import datetime
+
+# TASK 1: FILE PROCESSING
+
+def task1():
+    print("\nTASK 1: MESS BILL REPORT")
+
+    with open("mess_bills.txt", "w") as f:
+        f.write("101,Ravi,500.50\n102,Arun,600\n103,Sam,abc\n")
+
+    total = Decimal("0")
+    rejected = []
+
+    with open("mess_bills.txt", "r") as f:
+        for i, line in enumerate(f, 1):
+            try:
+                reg, name, amount = line.strip().split(",")
+                bill = Decimal(amount)
+                if not reg or not name or bill < 0:
+                    raise ValueError("Invalid record")
+                total += bill
+                print(reg, name, bill)
+            except Exception as e:
+                rejected.append(f"Line {i}: {e}")
+
+    print("Total Bill:", total)
+    print("Rejected:", rejected)
+
+
+# TASK 2: ATTENDANCE PROCESSING
+
+def task2():
+    print("\nTASK 2: ATTENDANCE REPORT")
+
+    data = [
+        "192311001,2026-10-08,P\n",
+        "192311002,2026-10-08\n",
+        "192311003,2026-10-08,L\n",
+        "192311004,2026-10-08,A\n"
+    ]
+
+    with open("day1.txt", "w") as f:
+        f.writelines(data)
+
+    attendance = {}
+    errors = []
+
+    with open("day1.txt", "r") as f:
+        for i, line in enumerate(f, 1):
+            try:
+                parts = line.strip().split(",")
+                if len(parts) != 3:
+                    raise ValueError("Invalid fields")
+
+                reg, date, status = parts
+                datetime.strptime(date, "%Y-%m-%d")
+
+                if status not in ["P", "A"]:
+                    raise ValueError("Invalid status")
+
+                if reg not in attendance:
+                    attendance[reg] = {"P": 0, "A": 0}
+
+                attendance[reg][status] += 1
+
+            except ValueError as e:
+                errors.append(f"Line {i}: {e}")
+
+    with open("monthly_report.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Register Number", "Present", "Absent", "Percentage"])
+
+        for reg, count in attendance.items():
+            total = count["P"] + count["A"]
+            percentage = count["P"] / total * 100
+            writer.writerow([reg, count["P"], count["A"], round(percentage, 2)])
+            print(reg, count, round(percentage, 2), "%")
+
+    with open("low_attendance.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Register Number", "Percentage"])
+
+        for reg, count in attendance.items():
+            total = count["P"] + count["A"]
+            percentage = count["P"] / total * 100
+            if percentage < 75:
+                writer.writerow([reg, round(percentage, 2)])
+
+    with open("errors.log", "w") as f:
+        f.write("\n".join(errors))
+
+    print("Errors:", errors)
+
+
+# TASK 3: EXCEPTION HANDLING
+
+class InvalidRecord(Exception):
+    pass
+
+
+class AttendanceFileError(Exception):
+    pass
+
+
+def parse_line(line):
+    parts = line.strip().split(",")
+
+    if len(parts) != 3:
+        raise InvalidRecord("Invalid fields")
+
+    reg, date, status = parts
+
+    if not reg or status not in ["P", "A"]:
+        raise InvalidRecord("Invalid attendance record")
+
+    return status
+
+
+def task3():
+    print("\nTASK 3: EXCEPTION HANDLING")
+
+    with open("attendance.txt", "w") as f:
+        f.write("101,2026-10-08,P\n")
+        f.write("102,2026-10-08\n")
+        f.write("103,2026-10-08,A\n")
+
+    p = 0
+    a = 0
+
+    try:
+        with open("attendance.txt", "r") as f:
+            for i, line in enumerate(f, 1):
+                try:
+                    status = parse_line(line)
+                    if status == "P":
+                        p += 1
+                    else:
+                        a += 1
+                except InvalidRecord as e:
+                    print("Line", i, ":", e)
+
+    except FileNotFoundError as e:
+        raise AttendanceFileError("File missing") from e
+    except PermissionError:
+        print("Permission denied")
+    except UnicodeDecodeError:
+        print("Invalid encoding")
+    else:
+        print("File processing completed")
+    finally:
+        print("Processing finished")
+
+    print("Present:", p)
+    print("Absent:", a)
+
+
+# TASK 4: FILE EXCEPTION FORENSICS
+
+def task4():
+    print("\nTASK 4: LIBRARY RETURN LOG")
+
+    def save_returns(books):
+        with open("returns.log", "a") as f:
+            for book in books:
+                f.write(book + "\n")
+
+    def process(filename):
+        try:
+            with open(filename, "r") as f:
+                for line in f:
+                    print(line.strip())
+        except FileNotFoundError:
+            print("File not found")
+        except PermissionError:
+            print("Permission denied")
+        except UnicodeDecodeError:
+            print("Invalid encoding")
+
+    save_returns(["Book A", "Book B"])
+    save_returns(["Book C"])
+
+    process("returns.log")
+
+
+# TASK 5: FOUR ORGANIZATION METHODS
+
+def read_file(filename):
+    with open(filename, "r") as f:
+        return f.readlines()
+
+
+def calculate(lines):
+    p = 0
+    a = 0
+
+    for line in lines:
+        parts = line.strip().split(",")
+        if len(parts) == 3:
+            if parts[2] == "P":
+                p += 1
+            elif parts[2] == "A":
+                a += 1
+
+    return p, a
+
+
+def report(p, a):
+    total = p + a
+    if total:
+        print("Present:", p)
+        print("Absent:", a)
+        print("Percentage:", p / total * 100)
+
+
+def check_streak(records):
+    absent_streak = {}
+    flagged = []
+
+    for reg, status in records:
+        if status == "A":
+            absent_streak[reg] = absent_streak.get(reg, 0) + 1
+        else:
+            absent_streak[reg] = 0
+
+        if absent_streak[reg] >= 3 and reg not in flagged:
+            flagged.append(reg)
+
+    return flagged
+
+
+def task5():
+    print("\nTASK 5: ATTENDANCE ORGANIZATION")
+
+    with open("attendance.txt", "w") as f:
+        f.write("101,2026-10-08,P\n")
+        f.write("102,2026-10-08,A\n")
+
+    # Organization 1: Single script
+    lines = read_file("attendance.txt")
+    p, a = calculate(lines)
+    print("Organization 1")
+    report(p, a)
+
+    # Organization 2: Imported module style
+    print("Organization 2")
+    report(*calculate(read_file("attendance.txt")))
+
+    # Organization 3: Three-module style
+    print("Organization 3")
+    report(*calculate(read_file("attendance.txt")))
+
+    # Organization 4: Package style
+    print("Organization 4")
+    report(*calculate(read_file("attendance.txt")))
+
+    records = [
+        ("101", "A"),
+        ("101", "A"),
+        ("101", "A"),
+        ("102", "P")
+    ]
+
+    print("Absent for three consecutive days:", check_streak(records))
+
+
+# TASK 6: COLLEGE FEST REGISTRATION
+
+def valid_email(email):
+    if email.count("@") != 1:
+        return False
+
+    name, domain = email.split("@")
+
+    return (
+        bool(name) and bool(domain)
+        and "." in domain
+        and not email.startswith("@")
+        and not email.endswith(".")
+    )
+
+
+def task6():
+    print("\nTASK 6: COLLEGE FEST REGISTRATION")
+
+    filenames = ["CSE.txt", "AIDS.txt", "ECE.txt", "EEE.txt", "MECH.txt"]
+
+    samples = {
+        "CSE.txt": [
+            "192311001;Arun Kumar;CSE;arun@gmail.com;Coding;Quiz\n",
+            "192311002;Priya;CSE;priya@gmail.com;Dance\n",
+            "192311003;Ravi;CSE;ravi@gmail.com;Coding\n"
+        ],
+        "AIDS.txt": [
+            "192311004;Kiran;AIDS;kiran@gmail.com;Coding\n"
+        ],
+        "ECE.txt": [
+            "192311001;Arun Kumar;ECE;arun2@gmail.com;Quiz\n"
+        ],
+        "EEE.txt": [
+            "192311005;Meena;EEE;meena@gmail.com;Dance\n"
+        ],
+        "MECH.txt": [
+            "192311006;Sanjay;MECH;sanjay@gmail.com;Quiz\n"
+        ]
+    }
+
+    for filename, records in samples.items():
+        with open(filename, "w") as f:
+            f.writelines(records)
+
+    master = []
+    seen = set()
+    events = {}
+    errors = []
+    rejected = 0
+
+    for filename in filenames:
+        try:
+            with open(filename, "r") as f:
+                for i, line in enumerate(f, 1):
+                    try:
+                        parts = line.strip().split(";")
+
+                        if len(parts) < 5:
+                            raise ValueError("Damaged record")
+
+                        reg, name, dept, email = parts[:4]
+                        selected = parts[4:]
+
+                        if not reg or not name:
+                            raise ValueError("Missing fields")
+
+                        if not valid_email(email):
+                            raise ValueError("Invalid email")
+
+                        if reg in seen:
+                            raise ValueError("Duplicate registration")
+
+                        seen.add(reg)
+
+                        student = {
+                            "reg": reg,
+                            "name": name,
+                            "dept": dept,
+                            "email": email,
+                            "events": selected
+                        }
+
+                        master.append(student)
+
+                        for event in selected:
+                            events.setdefault(event, []).append(student)
+
+                    except ValueError as e:
+                        rejected += 1
+                        errors.append(f"{filename} Line {i}: {e}")
+
+        except FileNotFoundError:
+            errors.append(filename + ": Missing file")
+        except PermissionError:
+            errors.append(filename + ": Permission denied")
+        except UnicodeDecodeError:
+            errors.append(filename + ": Invalid encoding")
+        except OSError as e:
+            errors.append(str(e))
+
+    with open("master.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Register Number", "Name", "Department", "Email", "Events"])
+
+        for s in master:
+            writer.writerow([
+                s["reg"], s["name"], s["dept"],
+                s["email"], ", ".join(s["events"])
+            ])
+
+    for event, students in events.items():
+        with open(event + ".txt", "w") as f:
+            for s in students:
+                f.write(s["reg"] + ";" + s["name"] + "\n")
+
+    with open("summary.txt", "w") as f:
+        f.write("Total valid registrations: " + str(len(master)) + "\n")
+        f.write("Total rejected records: " + str(rejected) + "\n")
+        f.write("Total events: " + str(len(events)) + "\n")
+
+        for event, students in events.items():
+            f.write(event + ": " + str(len(students)) + "\n")
+
+    with open("error.log", "w") as f:
+        f.write("\n".join(errors) if errors else "No errors found.")
+
+    print("Valid registrations:", len(master))
+    print("Rejected records:", rejected)
+    print("Events:", list(events.keys()))
+    print("Errors:", errors)
+
+
+# MAIN PROGRAM
+
+if __name__ == "__main__":
+    task1()
+    task2()
+    task3()
+    task4()
+    task5()
+    task6()
+
+    print("\nALL SIX TASKS COMPLETED")
+
+
