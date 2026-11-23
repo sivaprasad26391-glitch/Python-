@@ -1,0 +1,136 @@
+
+import sys
+from collections import Counter
+from functools import lru_cache
+
+calls = 0
+
+def ways_recursive(n):
+    global calls
+    calls += 1
+    if n <= 1:
+        return 1
+    return ways_recursive(n-1) + ways_recursive(n-2)
+
+@lru_cache(None)
+def ways_memo(n):
+    global calls
+    calls += 1
+    if n <= 1:
+        return 1
+    return ways_memo(n-1) + ways_memo(n-2)
+
+def ways_loop(n):
+    a, b = 1, 1
+    for i in range(2, n+1):
+        a, b = b, a+b
+    return b
+
+def count_recursive(n):
+    global calls
+    calls = 0
+    result = ways_recursive(n)
+    return result, calls
+
+def count_memo(n):
+    global calls
+    ways_memo.cache_clear()
+    calls = 0
+    result = ways_memo(n)
+    return result, calls
+
+def show_tree(n, level=0, count=None):
+    if count is not None:
+        count[n] += 1
+    print("    " * level + f"ways({n})")
+    if n > 1:
+        show_tree(n-1, level+1, count)
+        show_tree(n-2, level+1, count)
+
+def main():
+    print("Q6(a): Recursion Tree")
+    tally = Counter()
+    show_tree(5, count=tally)
+    print("Total calls:", sum(tally.values()))
+    for k in sorted(tally, reverse=True):
+        print(f"ways({k}): {tally[k]} time(s)")
+
+    print("\nQ6(b): Correctness Check")
+    expected = [1, 2, 3, 5, 8, 13]
+    print(" n  Hand  Recursive  Memo  Loop")
+    for n, value in enumerate(expected, 1):
+        ways_memo.cache_clear()
+        print(n, value, ways_recursive(n),
+              ways_memo(n), ways_loop(n))
+
+    print("\nQ6(c): Result for n = 25")
+    result, total = count_recursive(25)
+    print("Recursive:", result, "calls =", total)
+    result, total = count_memo(25)
+    print("Memoised :", result, "calls =", total)
+
+    print("\nQ6(d): Growth Comparison")
+    print(" n   Recursive calls   Memo calls   Ratio")
+    for n in (10, 20, 25, 30):
+        _, r = count_recursive(n)
+        _, m = count_memo(n)
+        print(f"{n:2}   {r:12,}   {m:8}   {r/m:,.0f}x")
+
+    print("\nQ6(e): Recursion Limit")
+    print("Default limit:", sys.getrecursionlimit())
+    ways_memo.cache_clear()
+    try:
+        ways_memo(1000)
+    except RecursionError:
+        print("Memoisation reached the recursion limit.")
+
+    print("Loop result for n = 1000:")
+    print(str(ways_loop(1000))[:20], "...")
+
+    print("\nQ6(f): Complexity")
+    print("Plain recursion : O(1.618^n) time, O(n) space")
+    print("Memoisation     : O(n) time, O(n) space")
+    print("Loop            : O(n) time, O(1) space")
+
+    print("\nQ7-A: Bottleneck Diagnosis")
+    tally = Counter()
+
+    def trace(n):
+        tally[n] += 1
+        if n <= 1:
+            return 1
+        return trace(n-1) + trace(n-2)
+
+    trace(20)
+    total = sum(tally.values())
+    distinct = len(tally)
+    print("Total calls:", total)
+    print("Distinct problems:", distinct)
+    print("Repeated calls:", total-distinct)
+    print("Wasted work:", f"{(total-distinct)/total:.2%}")
+
+    print("\nQ7-B: Design Objective")
+    print("Reduce calls for n=30 to at most 31.")
+
+    print("\nQ7-C: Revised Solution")
+    print("Use iteration with two variables.")
+    print("Time: O(n), Extra space: O(1)")
+
+    print("\nQ7-D: Prediction")
+    print("Calls reduce from 2,692,537 to 31 for n=30.")
+
+    print("\nQ7-E: Validation")
+    print(" n   Recursive   Memo   Loop   Same")
+    for n in (5, 10, 20, 25, 30):
+        r, rc = count_recursive(n)
+        m, mc = count_memo(n)
+        l = ways_loop(n)
+        print(f"{n:2}  {rc:10,}  {mc:5}  {l:6}  {r == m == l}")
+
+    print("\nQ7-F: Final Decision")
+    print("Iteration is preferred for deployment.")
+    print("It avoids recursion limits and uses O(1) extra space.")
+
+if __name__ == "__main__":
+    main()
+
