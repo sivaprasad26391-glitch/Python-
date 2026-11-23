@@ -1,0 +1,424 @@
+import csv
+import sqlite3
+import statistics
+import re
+import time
+import cProfile
+import io
+
+# TASK B1 - DATA CLEANING
+
+data = """station,date,pm25
+Adyar,2026-10-01,48
+Adyar,2026-10-02,NA
+Adyar,2026-10-03,
+Guindy,2026-10-01,95
+Guindy,2026-10-02,-5
+Guindy,2026-10-03,121
+Adyar,2026-10-04,1200
+"""
+
+def clean_data(data):
+    result = []
+    reader = csv.DictReader(io.StringIO(data))
+
+    for row in reader:
+        try:
+            station = row["station"].strip().title()
+            date = row["date"].strip()
+            value = row["pm25"].strip()
+
+            if not station or not date or value in ("", "NA"):
+                continue
+
+            pm = float(value)
+
+            if pm < 0 or pm > 999:
+                continue
+
+            result.append((station, date, pm))
+
+        except (ValueError, KeyError, TypeError):
+            continue
+
+    return result
+
+clean = clean_data(data)
+print("TASK B1 - CLEANED DATA")
+print(clean)
+
+# MIN-MAX NORMALIZATION
+
+values = [x[2] for x in clean]
+low = min(values)
+high = max(values)
+
+normalized = [
+    round((x - low) / (high - low), 3)
+    for x in values
+]
+
+print("Normalized values:", normalized)
+
+# Z-SCORE STANDARDIZATION
+
+mean = statistics.mean(values)
+sd = statistics.pstdev(values)
+
+if sd != 0:
+    zscore = [round((x - mean) / sd, 3) for x in values]
+else:
+    zscore = [0 for x in values]
+
+print("Z-score values:", zscore)
+
+# TASK B1.3 - SQLITE STORAGE
+
+con = sqlite3.connect(":memory:")
+cur = con.cursor()
+
+cur.execute("""
+CREATE TABLE stations(
+    station_id INTEGER PRIMARY KEY,
+    station_name TEXT UNIQUE
+)
+""")
+
+cur.execute("""
+CREATE TABLE readings(
+    station TEXT,
+    day TEXT,
+    pm25 REAL,
+    temperature REAL
+)
+""")
+
+cur.executemany(
+    "INSERT INTO readings VALUES(?,?,?,?)",
+    [(s, d, p, 28 + i) for i, (s, d, p) in enumerate(clean)]
+)
+
+cur.execute("""
+SELECT station, AVG(pm25)
+FROM readings
+GROUP BY station
+ORDER BY AVG(pm25) DESC
+""")
+
+print("\nTASK B1.3 - STATION AVERAGES")
+for row in cur.fetchall():
+    print(row)
+
+# DAILY SUMMARY
+
+cur.execute("""
+SELECT station, day, MIN(pm25), MAX(pm25),
+AVG(pm25), COUNT(pm25)
+FROM readings
+GROUP BY station, day
+""")
+
+print("\nDAILY SUMMARY")
+for row in cur.fetchall():
+    print(row)
+
+# TASK B1.4 - SIMPLE CHARTS
+
+print("\nTASK B1.4 - LINE CHART")
+for station, day, pm in clean:
+    print(day, "#" * int(pm / 3), pm)
+
+print("\nBAR CHART")
+cur.execute("SELECT station, AVG(pm25) FROM readings GROUP BY station")
+for station, avg in cur.fetchall():
+    print(station, "#" * int(avg / 3), round(avg, 2))
+
+print("\nSCATTER PLOT")
+for i, row in enumerate(clean):
+    print("Temperature:", 28 + i, "PM2.5:", row[2])
+
+# TASK B2 - ADVERSARIAL TESTING
+
+print("\nTASK B2 - ADVERSARIAL TESTING")
+
+# Missing column
+bad_data = "station,date\nAdyar,2026-10-01\n"
+reader = csv.DictReader(io.StringIO(bad_data))
+print("Missing column:", reader.fieldnames)
+
+# Wrong delimiter
+wrong = "station;date;pm25\nAdyar;2026-10-01;48"
+print("Wrong delimiter:", "," not in wrong.splitlines()[0])
+
+# Invalid encoding
+try:
+    b"\xff\xfe".decode("utf-8")
+except UnicodeDecodeError:
+    print("Invalid encoding handled")
+
+# Empty file
+empty = ""
+print("Empty file:", len(empty) == 0)
+
+# SQL INJECTION TESTING
+
+cur.execute("CREATE TABLE aq(station TEXT, pm25 REAL)")
+cur.executemany(
+    "INSERT INTO aq VALUES(?,?)",
+    [("Adyar", 48), ("Adyar", 60),
+     ("Guindy", 95), ("Guindy", 121)]
+)
+
+print("\nSQL INJECTION TESTING")
+
+name = "Adyar' OR '1'='1"
+
+query = "SELECT AVG(pm25) FROM aq WHERE station = ?"
+result = cur.execute(query, (name,)).fetchone()[0]
+print("Injection result:", result)
+
+for station in ["Adyar", "Guindy"]:
+    result = cur.execute(
+        "SELECT AVG(pm25) FROM aq WHERE station=?",
+        (station,)
+    ).fetchone()[0]
+    print(station, "average:", result)
+
+# SENTIMENT ADVERSARIAL TESTING
+
+POSITIVE = {"good", "clean", "fast", "helpful", "improved"}
+NEGATIVE = {"bad", "dirty", "slow", "rude", "smoke", "broken"}
+NEGATORS = {"not", "never", "no"}
+
+def score(text):
+    words = re.findall(r"\b\w+\b", text.lower())
+    total = 0
+
+    for i, word in enumerate(words):
+        value = 1 if word in POSITIVE else -1 if word in NEGATIVE else 0
+
+        if value and i > 0 and words[i - 1] in NEGATORS:
+            value = -value
+
+        total += value
+
+    return total
+
+def label(text):
+    value = score(text)
+
+    if value > 0:
+        return "Positive"
+    elif value < 0:
+        return "Negative"
+    return "Neutral"
+
+print("\nSENTIMENT TESTING")
+
+tests = [
+    "The roads are not good",
+    "The service is not bad",
+    "The service is good but slow",
+    "The air is never clean",
+    "Great service! The roads are terrible"
+]
+
+for sentence in tests:
+    print(sentence, ":", label(sentence))
+
+# TASK B3 - LOOPS VS SQL
+
+readings = [
+    ("Adyar", "2026-10-01", 48.0),
+    ("Adyar", "2026-10-01", 60.0),
+    ("Guindy", "2026-10-01", 95.0),
+    ("Guindy", "2026-10-01", 121.0)
+]
+
+print("\nTASK B3 - PYTHON LOOPS")
+
+groups = {}
+
+for station, day, pm in readings:
+    key = (station, day)
+    groups.setdefault(key, []).append(pm)
+
+for key, vals in groups.items():
+    print(key, sum(vals) / len(vals))
+
+# SQL GROUP BY
+
+db = sqlite3.connect(":memory:")
+db.execute("CREATE TABLE readings(station TEXT, day TEXT, pm25 REAL)")
+db.executemany("INSERT INTO readings VALUES(?,?,?)", readings)
+
+print("\nSQL GROUP BY")
+
+result = db.execute("""
+SELECT station, day, AVG(pm25)
+FROM readings
+GROUP BY station, day
+""").fetchall()
+
+for row in result:
+    print(row)
+
+# LARGE DATASET TESTING
+
+print("\nTASK B3 - DATA SIZE TESTING")
+
+def generate_data(stations):
+    groups = {}
+
+    for s in range(stations):
+        station = "Station" + str(s + 1)
+
+        for i in range(8760):
+            day = "Day" + str(i // 24 + 1)
+            key = (station, day)
+
+            if key not in groups:
+                groups[key] = [0, 0]
+
+            pm = (i % 100) + 1
+            groups[key][0] += pm
+            groups[key][1] += 1
+
+    return groups
+
+for count in [1, 12, 120]:
+    start = time.perf_counter()
+    result = generate_data(count)
+    end = time.perf_counter()
+
+    print("Stations:", count)
+    print("Readings:", count * 8760)
+    print("Groups:", len(result))
+    print("Time:", round(end - start, 3), "seconds")
+
+print("\nC-PROFILE")
+cProfile.run("generate_data(1)")
+
+# TASK B4 - SENTIMENT ANALYSIS ON 50 COMPLAINTS
+
+print("\nTASK B4 - 50 COMPLAINTS")
+
+complaints = [
+    "The roads are clean.",
+    "The service is good.",
+    "The air is dirty.",
+    "The bus is slow.",
+    "The staff are helpful."
+] * 10
+
+predictions = []
+
+for i, complaint in enumerate(complaints, 1):
+    result = label(complaint)
+    predictions.append(result)
+    print(i, result)
+
+# AGREEMENT MEASUREMENT
+
+human_labels = [
+    "Positive", "Positive", "Negative",
+    "Negative", "Positive"
+] * 10
+
+correct = sum(
+    predictions[i] == human_labels[i]
+    for i in range(50)
+)
+
+accuracy = correct / 50 * 100
+
+print("Correct predictions:", correct)
+print("Agreement:", accuracy, "%")
+
+# EXTRACTIVE SUMMARIZER
+
+STOPWORDS = {
+    "the", "is", "and", "a", "an",
+    "to", "of", "in", "was", "are"
+}
+
+def summarise(text, k=2):
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+
+    words = [
+        w.lower() for w in re.findall(r"\b\w+\b", text)
+        if w.lower() not in STOPWORDS
+    ]
+
+    frequency = {}
+
+    for word in words:
+        frequency[word] = frequency.get(word, 0) + 1
+
+    scores = []
+
+    for sentence in sentences:
+        words_in_sentence = re.findall(r"\b\w+\b", sentence)
+        value = sum(
+            frequency.get(w.lower(), 0)
+            for w in words_in_sentence
+        )
+        scores.append(value)
+
+    selected = sorted(
+        range(len(sentences)),
+        key=lambda i: scores[i],
+        reverse=True
+    )[:k]
+
+    return " ".join(
+        sentences[i] for i in sorted(selected)
+    )
+
+print("\nEXTRACTIVE SUMMARY")
+
+complaint = (
+    "The road is damaged. The road has many potholes. "
+    "People face problems every day."
+)
+
+print(summarise(complaint))
+
+# FIRST K SENTENCES METHOD
+
+def first_k_summary(text, k=2):
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    return " ".join(sentences[:k])
+
+print("First K Summary:", first_k_summary(complaint))
+
+# TASK B4.2 - DATABASE INDEXING
+
+print("\nTASK B4.2 - DATABASE INDEXING")
+
+query = """
+SELECT AVG(pm25)
+FROM readings
+WHERE station = ? AND day = ?
+"""
+
+start = time.perf_counter()
+db.execute(query, ("Adyar", "2026-10-01")).fetchone()
+before = time.perf_counter() - start
+
+db.execute("""
+CREATE INDEX idx_station_day
+ON readings(station, day)
+""")
+
+start = time.perf_counter()
+db.execute(query, ("Adyar", "2026-10-01")).fetchone()
+after = time.perf_counter() - start
+
+print("Before index:", before)
+print("After index:", after)
+
+print("\nALL CO5 PROGRAMS COMPLETED")
+
+con.close()
+db.close()
